@@ -1,2 +1,2 @@
 # finviz-screener-Stock-chart-analytics
-Stock chart analytics
+US Stock chart analytics
