@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+ finviz_screener.html  v13  (외부도구 연동 + 지수하락 SHORT 전략)
+================================================================================
+ [v13 변경 요약]
+  A. 외부도구 버튼 2개 (btn-row 추가):
+     - TradingView: 티커 입력 → https://kr.tradingview.com/chart/DZbBNbgX/?symbol=<TICKER>
+       (대문자 변환·영문/점/하이픈만 허용 sanitize·빈값 alert·localStorage 복원 finviz_tv_ticker_v1)
+     - Gemini Gem 고정 링크: https://gemini.google.com/gem/7bf800f33bbc
+     - 새 탭 열기는 기존 openURL() 재사용 (noopener).
+  B. STRATEGIES.short "지수하락 숏후보 ▼" 신설 (--red, 기존 데이터구조/렌더/buildURL 재사용).
+     - 기본 ON: Price<SMA200(⚠), Price<SMA50, 13주 수익률 음(-), Beta>1.5(⚠), 주가>$5(⚠).
+     - 옵션(기본 OFF): Price<SMA20, 데드크로스(⚠), 4주 음(⚠), RSI>70 반등숏(⚠), 숏비중<5% 스퀴즈회피(⚠).
+     - SIGNALS에 New Low·Downgrades 추가 (⚠, 기본 None).
+     - 빨간 경고박스: 숏 손실 무제한·하락 예측기 아님·숏스퀴즈 주의 (surge 톤 통일).
+     - 지수 하락 '예상' 판단 기능(매크로 신호등 등)은 의도적으로 미구현 — 필터 제공까지만.
+     - CMP 비교표·가이드 카드에는 미반영(기존 6전략 유지 — 기존 코드 무수정 원칙).
+  C. .strat-row에 flex-wrap 추가(전략 버튼 7개 수용), .tv-input CSS 신설.
+
+ [⚠ v13 신규 미검증 코드 — Finviz 실측 후 ok:true 전환 필요]
+   ta_sma200_pb, ta_sma50_sb200, ta_perf_4wdown, ta_rsi_ob70, sh_short_u5,
+   ta_newlow, ta_downgrades  (기존 ⚠ 재사용: ta_beta_o1.5, sh_price_o5)
+ ─────────────────────────────────────────────────────────────────────────────
+ finviz_screener.html  v10  (수렴 돌파 전략 — 맨 위 추가)
+================================================================================
+ [v10 변경 요약 — '수렴 돌파(Coil Breakout)' 전략을 strat 맨 앞에 추가]
+  - ATPC형: 저가·저플로트 바닥 응집(이평 수렴) 후 단기(SMA20)·중기(SMA50)선 회복 + 거래량 유입.
+  - 기본 ON: Price>SMA20, Price>SMA50, RelVol>1.5, Price<$10. 옵션: 변동성(월)<3%, SMA20/50 상향돌파.
+  - ★정통 Minervini VCP 아님(상승추세·200MA 위) → price>SMA200 조건 일부러 제외(ATPC는 200선 한참 아래).
+  - 패턴 기본값 = Multiple Bottom(차트 주석과 일치). 기본 선택 전략 = vcp.
+  - ⚠ 'SMA20≈SMA50 수렴'·'ATR 수축'은 Finviz 미지원 → vcp 전용 체크리스트로 차트확인 유도.
+  - 신규 ⚠ 코드: sh_price_u10, ta_volatility_mu3, ta_sma20_ca, ta_sma50_ca (실측 필요).
+ ─────────────────────────────────────────────────────────────────────────────
+ finviz_screener.html  v9  (Pattern 필터 + 📊 패턴 가이드)
+================================================================================
+ [v9 변경 요약 — 차트 패턴 필터·가이드]
+  A. CHART PATTERN 드롭다운 신설(전 전략, 기본 Off, ⚠). 28종 옵션(11 base × 2 Strong + 6 단일).
+     Elite 필터 가정으로 코드 접두 PATTERN_PREFIX="ta_pattern_" 기본 — Elite URL 확인 후 필요시 "ta_p_"로 1줄 교체.
+     약세 패턴 선택 시 빨강 경고박스(매수전략과 방향 반대).
+  B. PATTERNS 17 base + Strong 11종 / dir(bull/bear/neutral) / desc / combo(보조필터) / src(공개 출처).
+  C. '📊 패턴 가이드' 토글 섹션 — 사용법 가이드 아래. 3그룹(🟢강세/🔴약세/⚪중립). Wedge Up/Down 명칭함정 박스.
+  D. "이 설정으로 적용" 버튼 — 패턴+combo 자동토글. 약세 패턴은 confirm. preset=__p_<idx>, src 표시.
+  E. SIGNAL 패턴 vs FILTER 패턴 상호배타 처리(filter ON 시 signal ta_p_* 자동 None).
+  F. 정직성: Bulkowski 통계는 서지표기만(숫자 창작 금지). 트레이더-패턴 매핑은 공개 출처만.
+
+ [⚠ v9 신규 미검증 코드] PATTERN_PREFIX+key 형태 28종 (전부 ⚠).
+   기본: ta_pattern_{horizontal,horizontal2,tlresistance,tlresistance2,tlsupport,tlsupport2,
+                     wedgeup,wedgeup2,wedgedown,wedgedown2,triangleascending,triangleascending2,
+                     triangledescending,triangledescending2,wedge,wedge2,
+                     channelup,channelup2,channeldown,channeldown2,channel,channel2,
+                     doubletop,doublebottom,multipletop,multiplebottom,
+                     headandshoulders,headandshouldersinv}
+   ※ Elite에서 패턴 1개 적용 후 URL에 f=ta_pattern_X 가 나오면 그대로, s=ta_p_X 로 나오면
+     PATTERN_PREFIX="ta_p_" 로 1줄 수정.
+ ─────────────────────────────────────────────────────────────────────────────
+ finviz_screener.html  v8  (사용법 가이드 추가)
+================================================================================
+ [v8 변경 요약 — '📖 사용법 가이드' 접이식 섹션]
+  - 5개 도구를 초등학생 눈높이 비유로 설명(카드형) + 장점 한눈 비교표.
+  - "얼마나 잘 맞나? %" 정직 섹션: 스크리너=예측기 아님(고정 적중률 없음).
+    인용 가능한 진짜 데이터만 [출처·전제] 동반(Qullamaggie 승률 ~25-30%, 본인 APEX 백테스트는 별도 시스템).
+  - 가짜 적중률 숫자 부여 금지. 비교표(cmp) 아래 토글 섹션, 상태 localStorage 저장.
+ ─────────────────────────────────────────────────────────────────────────────
+ finviz_screener.html  v7  (모멘텀 리더 + 방법론 빌트인 프리셋)
+================================================================================
+ [v7 변경 요약 — 유명 트레이더 방법론(Minervini·O'Neil·Qullamaggie)]
+  A. STRATEGIES.leaders "모멘텀 리더 ◆" 신설 (Stage2 추세+신고가+상대강도+거래량, Finviz 사전필터).
+     - 주가>$5(sh_price_o5)를 기본 ON 필터로 추가 (PRICE 드롭다운 부재 보완).
+  B. BUILTIN_PRESETS 4종(★Minervini Stage2 / Qullamaggie 브레이크아웃 / Qullamaggie EP / O'Neil CANSLIM-lite).
+     선택 시 해당 strat 전환 후 설정 일괄 적용.
+  C. loadPreset 빌트인/사용자 구분, 빌트인 선택 시 출처(src) 주석 노출.
+  D. METHOD_LIMITS 한계박스(150MA·RS등급·ADR%·10MA·컨솔리데이션 불가) — leaders/빌트인 활성 시 상시.
+     (A의 leaders.warn과 D 내용 동일 → 중복방지로 한계박스로 통합, leaders.warn=null)
+  E. 신규코드 ⚠·미검증 합산 / LS키 동일 / a11y·noopener·포커스복원 / strat-row 5버튼.
+ [⚠ v7 신규 미검증 코드] ta_highlow52w_b0to25h, ta_highlow52w_a30h, fa_epsqoq_o20, exch_nasd
+   (sh_price_o5·ta_sma50_sa200·ta_gap_u 등은 기존 ⚠ 유지)
+ [방법론 출처] Minervini Trend Template / O'Neil CAN SLIM / Kullamägi(Qullamaggie) 3 Setups.
+   ※ 셋 다 Finviz 단독 아님 — Finviz=사전필터, 최종선택=차트(Qullamaggie=TC2000).
+ ─────────────────────────────────────────────────────────────────────────────
+ [v6 변경 요약 — "급등 후보(Surge Candidate)" 전략 추가]
+  A. STRATEGIES.surge 신설 (⚡, --red). 큰 % 변동 '특성' 보유 종목 풀 식별 (예측 아님).
+     - 기본 ON(품질형 이그니션+리스크가드): 4주양수 / 52W고점10%이내 / Price>SMA50 /
+       RelVol>1.5 / 주가>$5
+     - 옵션 OFF(고위험): Beta>1.5 / 오늘 갭업 / EPS Q/Q 양수
+     - red 경고박스(급등 예측 아님·급락/거래정지/펌프앤덤프 리스크)
+  B. SIGNALS에 Unusual Volume·New High(코드확인) + Most Volatile·Upgrades·Recent Insider Buying(⚠) 추가.
+     surge 기본 시그널 = ta_unusualvolume.
+  C. FLOAT·SHORT FLOAT 드롭다운 신설(surge에서만 표시, 기본 Off). ok 플래그→미검증 합산.
+  D. 기존 "급등주 확인"(s=ta_topgainers) 라벨을 "오늘 급등(분출)·추격금지"로 변경(목적 반대 명시).
+  E. 비교표(CMP)에 "급등후보 ⚡" 열 추가.
+  F. surge 전용 체크리스트(전부 Finviz 필터 불가) — strat==='surge'에서만 노출.
+  G. 신규코드 전부 ok:false(⚠)로 시작·미검증 합산 / localStorage 키 동일(finviz_screener_v5) /
+     a11y·포커스복원·noopener 유지 / strat-row 4버튼.
+
+ [⚠ v6 신규 미검증 Finviz 코드 — 본인 Finviz 화면에서 1회 실측 후 ⚠ 해제]
+  A: sh_price_o5 , ta_beta_o1.5 , ta_gap_u
+  B: ta_mostvolatile , ta_upgrades , ta_recentinsiderbuying
+     (ta_unusualvolume / ta_newhigh 는 URL로 코드 확인됨 → ok:true)
+  C: sh_float_u10 , sh_float_u20 , sh_float_u50 , sh_float_u100 ,
+     sh_short_o10 , sh_short_o15 , sh_short_o20 , sh_short_o30
+  (ta_perf_4wup / ta_highlow52w_b0to10h / ta_sma50_pa / sh_relvol_o1.5 / fa_epsqoq_pos 는
+   기존 전략에서 ok:true로 사용 중 → 유지)
+
+ [v6 설계 판단 — 프롬프트와 다르게 처리한 부분]
+  - 프롬프트 A의 sh_float_u50 '필터 토글'과 C의 FLOAT '드롭다운'이 동일 항목을 중복 제어 →
+    충돌(두 float 필터 동시 적용) 방지를 위해 float/short는 드롭다운(C)으로 일원화하고
+    A의 sh_float_u50 토글은 제거함. (beta/gap/eps 토글은 유지)
+
+ ─────────────────────────────────────────────────────────────────────────────
+ [v5 변경 요약 — 이전 버전, 유지]
+  A.목표가/등급 필터  B.시그널 드롭다운(단일선택)  C.퀵링크(급등주/Technical뷰)
+  D.버그수정(ta_sma50_sa200, ta_oversold)  E.localStorage  F.충돌·중복 방지
+  G.시그널 미검증 합산  H.거래량/시총 드롭다운  I.접근성  J.프리셋/리셋  K.CMP동기화
+  L.견고성(noopener·0개경고·포커스복원)  M.PWA 아이콘(서비스워커는 file:// 미지원이라 생략)
+ [⚠ v5 미검증 코드] targetprice_a, an_recom_buybetter, ta_p_channelup, ta_p_tlsupport,
+  ta_p_triangleascending, ta_p_multiplebottom, ta_oversold, ta_p_doubletop,
+  ta_p_headandshoulders, ta_sma50_sa200, sh_avgvol_o100, sh_avgvol_o1000,
+  cap_smallover, cap_largeover
+ [근거] Finviz 패턴/시그널은 s=(단일선택). cap_* 는 원본 명명형(cap_midover) 채택.
+================================================================================
+-->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finviz Stock Screener</title>
+<link rel="manifest" href='data:application/json,{"name":"Finviz Screener","short_name":"Screener","start_url":".","display":"standalone","background_color":"%230a0e17","theme_color":"%2300d4aa","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22%3E%3Crect width=%2248%22 height=%2248%22 rx=%2210%22 fill=%22%230a0e17%22/%3E%3Ctext x=%2224%22 y=%2233%22 font-size=%2226%22 text-anchor=%22middle%22 fill=%22%2300d4aa%22%3E%E2%AC%A1%3C/text%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml"}]}'>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{--bg:#0a0e17;--s1:#0d1422;--s2:#111827;--s3:#1a2540;--border:#1e2d47;--accent:#00d4aa;--af:rgba(0,212,170,0.08);--ab:rgba(0,212,170,0.22);--red:#f5475a;--yellow:#f5a623;--yf:rgba(245,166,35,0.1);--blue:#4a9eff;--purple:#a78bfa;--text:#dde3f0;--muted:#5c6b8a;--dim:#2a3550}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono','Menlo','Consolas',monospace;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
+.header{background:var(--s1);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+.header-left{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;background:var(--af);border:1px solid var(--ab);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.header h1{font-size:13px;font-weight:600;letter-spacing:0.08em}
+.header .sub{font-size:9px;color:var(--muted);letter-spacing:0.12em;margin-top:1px}
+.main{padding:20px;max-width:940px;margin:0 auto}
+.strat-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.strat-btn{flex:1;padding:12px 8px;cursor:pointer;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--muted);text-align:center;transition:all .2s;-webkit-user-select:none}
+.strat-btn.active{background:var(--s2)}
+.strat-btn .icon{font-size:18px;margin-bottom:5px}
+.strat-btn .name{font-size:11px;font-weight:600;letter-spacing:0.04em}
+.strat-btn .en{font-size:9px;opacity:.6;margin-top:2px}
+.desc-box{background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:11px 14px;margin-bottom:14px}
+.desc-title{font-size:11px;font-weight:600;margin-bottom:6px}
+.desc-meta{font-size:9px;color:var(--muted);margin-top:2px}
+.note-box{border-radius:5px;padding:7px 10px;font-size:10px;border-left:2px solid;margin-top:6px}
+.warn-box{background:var(--yf);border:1px solid rgba(245,166,35,.3);border-radius:6px;padding:9px 12px;margin-bottom:14px;font-size:10px;color:var(--yellow);line-height:1.5}
+.warn-box.red{background:rgba(245,71,90,.08);border-color:rgba(245,71,90,.4);color:var(--red)}
+.section{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+.filter-section{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+.filter-title{font-size:10px;color:var(--muted);margin-bottom:12px;letter-spacing:0.12em}
+.filter-row{display:flex;align-items:center;gap:12px;padding:8px 10px;margin-bottom:6px;border-radius:6px;cursor:pointer;transition:all .15s;border:1px solid var(--border)}
+.filter-row.on{background:var(--af);border-color:var(--ab)}
+.toggle{width:34px;height:18px;border-radius:9px;position:relative;transition:background .2s;flex-shrink:0}
+.toggle .knob{position:absolute;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.filter-label{flex:1;font-size:12px;font-weight:500}
+.filter-code{font-size:9px;color:var(--muted);background:var(--s3);padding:2px 7px;border-radius:3px}
+.filter-warn{font-size:11px;color:var(--yellow)}
+.fv-select{width:100%;background:var(--s3);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:11px;padding:9px 10px;border-radius:6px;cursor:pointer}
+.thr-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.thr-label{font-size:9px;color:var(--muted);letter-spacing:.1em;margin-bottom:5px;display:block}
+.preset-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mini-btn{padding:8px 12px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;cursor:pointer;font-family:inherit;transition:all .2s}
+.mini-btn:hover{border-color:var(--accent);color:var(--accent)}
+.url-section{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+.url-box{background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:9px 12px;margin-bottom:12px;word-break:break-all;font-size:9px;line-height:1.6}
+.url-host{color:var(--accent)}
+.url-params{color:var(--muted)}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap}
+.btn-primary{flex:1;min-width:150px;padding:10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:0.06em;transition:all .2s}
+.btn-secondary{padding:10px 16px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit;transition:all .2s}
+.tv-input{padding:10px 12px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;font-family:inherit;width:120px;text-transform:uppercase}
+.btn-secondary.copied{background:var(--af);border-color:var(--accent);color:var(--accent)}
+.cmp-section{background:var(--s2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+.cmp-header{padding:11px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);letter-spacing:0.1em}
+.cmp-table{width:100%;border-collapse:collapse;font-size:10px}
+.cmp-table th{padding:6px 8px;border-bottom:1px solid var(--border);font-weight:600}
+.cmp-table td{padding:6px 8px;text-align:center}
+.cmp-table tr:nth-child(even){background:var(--s3)}
+.checklist{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px}
+.checklist-title{font-size:10px;color:var(--accent);margin-bottom:12px;letter-spacing:0.12em}
+.check-item{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px}
+.check-item:last-child{border-bottom:none}
+.check-box{width:16px;height:16px;border:1.5px solid var(--dim);border-radius:3px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;margin-top:1px;transition:all .15s}
+.check-box.checked{border-color:var(--accent);background:var(--accent);color:var(--bg)}
+.check-text{color:var(--muted)}
+.check-text.checked{color:var(--text)}
+.chk-moved{opacity:.45}
+.chk-moved .check-box{visibility:hidden}
+.moved-tag{font-size:9px;color:var(--accent);background:var(--af);padding:1px 6px;border-radius:3px;margin-left:6px;white-space:nowrap}
+.note-inline{font-size:9px;color:var(--yellow);margin-left:4px}
+:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.guide-card{border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:11px 13px;margin-bottom:10px;background:var(--s3)}
+.guide-card h4{font-size:12px;margin-bottom:7px;font-weight:600}
+.guide-card h4 .en{color:var(--muted);font-size:9px;font-weight:400}
+.guide-row{font-size:10.5px;line-height:1.6;color:var(--text);margin:3px 0}
+.guide-row b{color:var(--muted);font-weight:600;margin-right:5px}
+.guide-warn{color:var(--red)}
+.guide-warn b{color:var(--red)}
+.guide-box{background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:10px;line-height:1.7;color:var(--muted);margin:10px 0}
+.guide-h{font-size:11px;color:var(--accent);letter-spacing:.1em;margin:16px 0 8px}
+.guide-table{width:100%;border-collapse:collapse;font-size:10px;margin-top:4px}
+.guide-table th,.guide-table td{padding:5px 6px;border-bottom:1px solid var(--border);text-align:center}
+.guide-table th{color:var(--muted);font-weight:600}
+.guide-table td:first-child,.guide-table th:first-child{text-align:left}
+.guide-table td:last-child,.guide-table th:last-child{text-align:left}
+.pat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pat-card{background:var(--s3);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:11px 13px;display:flex;flex-direction:column;gap:6px}
+.pat-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pat-badge{font-size:9px;padding:2px 7px;border:1px solid;border-radius:3px;letter-spacing:.05em;white-space:nowrap}
+.pat-name{font-size:11.5px;font-weight:600;color:var(--text)}
+.pat-ko{color:var(--muted);font-weight:400;font-size:10px;margin-left:4px}
+.pat-desc{font-size:10.5px;line-height:1.5;color:var(--text)}
+.pat-combo{font-size:9.5px;color:var(--muted);line-height:1.7}
+.pat-combo b{color:var(--text);margin-right:4px;font-weight:600}
+.pat-combo code{background:var(--s2);padding:1px 5px;border-radius:3px;font-size:9px;color:var(--accent);margin-right:3px;font-family:inherit}
+.pat-src{font-size:9px;color:var(--muted)}
+.pat-card .mini-btn{margin-top:4px;align-self:flex-start;font-size:9.5px}
+@media(max-width:600px){.pat-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.strat-row{flex-direction:column}.main{padding:14px}.btn-row{flex-direction:column}.btn-primary{min-width:0}.thr-grid{grid-template-columns:1fr}}
+/* ===== ⚡ Quick Launch 패널 (v11 추가 — 맨 위 상단 원클릭) ===== */
+.ql-wrap{max-width:940px;margin:16px auto 0;padding:0 20px}
+.ql-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.ql-title{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text)}
+.ql-note{font-size:9px;color:var(--muted);letter-spacing:.02em;line-height:1.5}
+.ql-note b{color:var(--accent);font-weight:600}
+.ql-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.ql-card{background:var(--s2);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:12px 13px;display:flex;flex-direction:column;gap:7px}
+.ql-name{font-size:12px;font-weight:600;color:var(--text)}
+.ql-en{color:var(--muted);font-size:9px;font-weight:400;margin-left:4px}
+.ql-desc{font-size:10.5px;line-height:1.5;color:var(--text)}
+.ql-risk{font-size:9.5px;line-height:1.5;color:var(--red)}
+.ql-btn{margin-top:2px;padding:9px;border:none;border-radius:6px;color:var(--bg);font-size:11px;font-weight:700;letter-spacing:.05em;cursor:pointer;font-family:inherit;transition:filter .2s}
+.ql-btn:hover{filter:brightness(1.12)}
+.ql-url{font-size:8px;line-height:1.5;color:var(--muted);word-break:break-all;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:5px 7px}
+.ql-ipo-row{margin-top:10px}
+.ql-ipo-row .ql-card{max-width:340px}
+@media(max-width:600px){.ql-grid{grid-template-columns:1fr}.ql-wrap{padding:0 14px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">⬡</div>
+    <div>
+      <h1>FINVIZ STOCK SCREENER</h1>
+      <div class="sub">수렴돌파 · 상승초입 · 장기상승 · 반등 · 급등후보 · 리더 · 패턴</div>
+    </div>
+  </div>
+  <div style="font-size:9px;color:var(--muted);text-align:right">
+    <div>Tab ① Only — No API</div>
+    <div style="color:var(--accent);margin-top:1px">v10</div>
+  </div>
+</div>
+
+<div class="ql-wrap" id="quickLaunch">
+  <div class="ql-head">
+    <span class="ql-title">⚡ 빠른 실행 · 3개 차트타입 원클릭</span>
+    <span class="ql-note">버튼 = 고정 스크리너 · <b>Finviz가 매주 신규 종목 자동 반영</b> (이 페이지는 데이터를 가져오지 않음 · No API)</span>
+  </div>
+  <div class="ql-grid">
+    <div class="ql-card" style="border-left-color:var(--accent)">
+      <div class="ql-name">차트1 · 수렴돌파<span class="ql-en">ATPC / Coil</span></div>
+      <div class="ql-desc">저가 바닥 응집 → 단기·중기선(SMA20·50) 회복 + 거래 유입</div>
+      <div class="ql-risk">⚠ 저가·저플로트 — 급락·거래정지·펌프 위험. SMA200 아래면 바닥반등(추세 아님)</div>
+      <button class="ql-btn" style="background:var(--accent)" data-fk="ql-0" onclick="quickOpen(0)">Finviz에서 찾기 →</button>
+      <div class="ql-url" id="ql-url-0"></div>
+    </div>
+    <div class="ql-card" style="border-left-color:var(--red)">
+      <div class="ql-name">차트2 · 급등 후보<span class="ql-en">Surge</span></div>
+      <div class="ql-desc">바닥 후 거래 급증·52W고점 근접·SMA50 위 분출 후보 풀</div>
+      <div class="ql-risk">⚠ 급등 예측 아님 — 급락·거래정지·펌프앤덤프 위험. 촉매·base·유동성 수동확인 필수</div>
+      <button class="ql-btn" style="background:var(--red)" data-fk="ql-1" onclick="quickOpen(1)">Finviz에서 찾기 →</button>
+      <div class="ql-url" id="ql-url-1"></div>
+    </div>
+    <div class="ql-card" style="border-left-color:var(--blue)">
+      <div class="ql-name">차트3 · 모멘텀 리더<span class="ql-en">Stage2 · Minervini</span></div>
+      <div class="ql-desc">50·200선 위 정배열 + 골든크로스 + 신고가 근접 우상승 주도주</div>
+      <div class="ql-risk">⚠ RS등급·150일선·ADR%는 Finviz 미지원 → 최종선택은 차트 확인</div>
+      <button class="ql-btn" style="background:var(--blue)" data-fk="ql-2" onclick="quickOpen(2)">Finviz에서 찾기 →</button>
+      <div class="ql-url" id="ql-url-2"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ql-wrap ql-ipo-row" id="quickLaunchIPO">
+  <div class="ql-card" style="border-left-color:var(--yellow)">
+    <div class="ql-name">🆕 신규상장<span class="ql-en">IPO Date · 별도 트랙</span></div>
+    <div class="ql-desc">최근 상장 종목만 — 이평/시총 조건 없음(SMA 충돌 회피). 상장 완료분만 노출(예정 IPO 제외)</div>
+    <select class="fv-select" id="ql-ipo-period" data-fk="ql-ipo" onchange="ipoPreview()">
+      <option value="today">Today · 당일 상장</option>
+      <option value="week" selected>최근 1주 · In the last week</option>
+      <option value="month">최근 1개월 · In the last month</option>
+      <option value="quarter">최근 분기 · In the last quarter</option>
+    </select>
+    <div style="font-size:9px;color:var(--yellow);line-height:1.5">⚠ ipodate_* 코드 미검증 — Finviz에서 1회 선택해 URL의 f=ipodate_… 로 확정 필요</div>
+    <button class="ql-btn" style="background:var(--yellow)" data-fk="ql-3" onclick="ipoOpen()">Finviz에서 찾기 →</button>
+    <div class="ql-url" id="ql-url-3"></div>
+  </div>
+</div>
+
+<div class="main" id="app"></div>
+
+<script>
+"use strict";
+
+/* ===== 시그널 (단일선택, s= 파라미터) — 패턴은 필터가 아니라 시그널 ===== */
+const SIGNALS = [
+  {v:"",                        label:"None",                       ok:true},
+  {v:"ta_p_channelup",          label:"Channel Up",                 ok:false},
+  {v:"ta_p_tlsupport",          label:"TL Support",                 ok:false},
+  {v:"ta_p_triangleascending",  label:"Triangle Asc",               ok:false},
+  {v:"ta_p_multiplebottom",     label:"Multiple Bottom",            ok:false},
+  {v:"ta_oversold",             label:"Oversold (반등용)",           ok:false},
+  {v:"ta_p_doubletop",          label:"Double Top · 반전탐지·별도확인", ok:false, rev:true},
+  {v:"ta_p_headandshoulders",   label:"H&S · 반전탐지·별도확인",       ok:false, rev:true},
+  {v:"ta_unusualvolume",        label:"Unusual Volume (관심유입)",    ok:true},
+  {v:"ta_newhigh",              label:"New High (신고가)",            ok:true},
+  {v:"ta_newlow",               label:"New Low (신저가·숏용)",        ok:false, rev:true},
+  {v:"ta_downgrades",           label:"Downgrades (등급하향·숏용)",    ok:false, rev:true},
+  {v:"ta_mostvolatile",         label:"Most Volatile",              ok:false},
+  {v:"ta_upgrades",             label:"Upgrades (등급상향)",          ok:false},
+  {v:"ta_recentinsiderbuying",  label:"Recent Insider Buying",      ok:false},
+];
+
+/* ===== 임계값 드롭다운 ===== */
+const VOL_OPTS = [
+  {v:"",               label:"Off",      ok:true},
+  {v:"sh_avgvol_o100", label:"100K+",    ok:false},
+  {v:"sh_avgvol_o200", label:"200K+",    ok:true},
+  {v:"sh_avgvol_o500", label:"500K+",    ok:true},
+  {v:"sh_avgvol_o1000",label:"1M+",      ok:false},
+];
+const CAP_OPTS = [
+  {v:"",            label:"Any",            ok:true},
+  {v:"cap_smallover",label:"+Small ($300M↑)",ok:false},
+  {v:"cap_midover", label:"+Mid ($2B↑)",     ok:true},
+  {v:"cap_largeover",label:"+Large ($10B↑)", ok:false},
+];
+/* surge 전용 (C) */
+const FLOAT_OPTS = [
+  {v:"",            label:"Off",     ok:true},
+  {v:"sh_float_u10",label:"< 10M",   ok:false},
+  {v:"sh_float_u20",label:"< 20M",   ok:false},
+  {v:"sh_float_u50",label:"< 50M",   ok:false},
+  {v:"sh_float_u100",label:"< 100M", ok:false},
+];
+const SHORT_OPTS = [
+  {v:"",            label:"Off",     ok:true},
+  {v:"sh_short_o10",label:"> 10%",   ok:false},
+  {v:"sh_short_o15",label:"> 15%",   ok:false},
+  {v:"sh_short_o20",label:"> 20%",   ok:false},
+  {v:"sh_short_o30",label:"> 30%",   ok:false},
+];
+
+const STRATEGIES = {
+  vcp: {
+    name:"수렴 돌파", en:"Coil Breakout", icon:"≣", color:"#00d4aa",
+    desc:"저가 바닥 응집(이평 수렴) 후 단기·중기선 회복 + 거래량 유입 — ATPC형",
+    view:"v=211", warnRed:true,
+    note:"단기(SMA20)·중기(SMA50) 회복 + 거래 유입 + 저가 응집. ⚠ '이평 수렴'·'ATR 수축'은 Finviz 미지원 → 차트 확인 필수.",
+    warn:"⚠ 정통 Minervini VCP(200일선 위 상승추세) 아님 — '저가·저플로트 바닥 응집형'(ATPC형). 200일선 한참 아래 = 바닥반등이지 추세상승 아님. 저가·저플로트 = 급락·거래정지·펌프 위험.",
+    exclusive:[["ta_sma20_pa","ta_sma20_ca"],["ta_sma50_pa","ta_sma50_ca"]],
+    filters:[
+      {code:"ta_sma20_pa",label:"Price > SMA20 (단기선 회복)",ok:true,on:true},
+      {code:"ta_sma50_pa",label:"Price > SMA50 (중기선 회복)",ok:true,on:true},
+      {code:"sh_relvol_o1.5",label:"상대거래량 > 1.5x (거래 유입)",ok:true,on:true},
+      {code:"sh_price_u10",label:"주가 < $10 (저가·저플로트 ⚠고위험)",ok:false,on:true},
+      {code:"ta_volatility_mu3",label:"변동성(월) < 3% — 수축 근사 ⚠",ok:false,on:false},
+      {code:"ta_sma20_ca",label:"Price SMA20 상향돌파(택1)",ok:false,on:false},
+      {code:"ta_sma50_ca",label:"Price SMA50 상향돌파(택1)",ok:false,on:false},
+    ]
+  },
+  breakout: {
+    name:"상승 초입", en:"Breakout", icon:"↗", color:"#a78bfa",
+    desc:"교과서적 브레이크아웃 구간 — SMA 정배열 + 골든크로스 확인",
+    view:"v=211",
+    note:"SMA20>50>200 정배열 + 골든크로스 + 52W고점 근접 — 상대거래량 OFF 기본",
+    warn:"⚠ SMA50 vs 현재가 괴리 +50% 이상 종목(파라볼릭 과열)은 수동 제외 (Finviz 필터 불가)",
+    exclusive:[["ta_highlow52w_b0to10h","ta_highlow52w_b0to3h"]],
+    filters:[
+      {code:"ta_sma20_pa",label:"Price > SMA20",ok:true,on:true},
+      {code:"ta_sma50_pa",label:"Price > SMA50",ok:true,on:true},
+      {code:"ta_sma200_pa",label:"Price > SMA200",ok:true,on:true},
+      {code:"ta_sma50_sa200",label:"SMA50 > SMA200 (골든크로스)",ok:false,on:true},
+      {code:"ta_highlow52w_b0to10h",label:"52W 고점 10% 이내",ok:true,on:true},
+      {code:"ta_highlow52w_b0to3h",label:"52W 고점 3% 이내 (타이트)",ok:true,on:false},
+      {code:"ta_perf_4wup",label:"4주 수익률 양(+)",ok:true,on:true},
+      {code:"sh_relvol_o1.5",label:"상대거래량 > 1.5x",ok:true,on:false},
+      {code:"fa_epsqoq_pos",label:"EPS Q/Q 성장 양(+)",ok:true,on:false},
+      {code:"targetprice_a",label:"애널리스트 목표가 ≥ 현재가",ok:false,on:false},
+      {code:"an_recom_buybetter",label:"애널리스트 Buy 이상",ok:false,on:false},
+    ]
+  },
+  longtrend: {
+    name:"장기 상승", en:"Long Uptrend", icon:"◉", color:"#4a9eff",
+    desc:"골든크로스 + 분기·반기 양수 수익률 — 장기 추세 추종",
+    view:"v=111",
+    note:"SMA50>SMA200 + 4주/13주/26주 전부 양수 → 구조적 우상향만 포착",
+    warn:null,
+    exclusive:[],
+    filters:[
+      {code:"ta_sma50_pa",label:"Price > SMA50",ok:true,on:true},
+      {code:"ta_sma200_pa",label:"Price > SMA200",ok:true,on:true},
+      {code:"ta_sma50_sa200",label:"SMA50 > SMA200 (골든크로스)",ok:false,on:true},
+      {code:"ta_perf_4wup",label:"4주 수익률 양(+)",ok:true,on:true},
+      {code:"ta_perf_13wup",label:"13주(분기) 수익률 양(+)",ok:true,on:true},
+      {code:"ta_perf_26wup",label:"26주(반기) 수익률 양(+)",ok:true,on:true},
+      {code:"fa_eps5years_o10",label:"5Y EPS 성장 > 10%",ok:true,on:false},
+      {code:"fa_salesqoq_pos",label:"매출 Q/Q 성장 양(+)",ok:true,on:false},
+      {code:"targetprice_a",label:"애널리스트 목표가 ≥ 현재가",ok:false,on:true},
+      {code:"an_recom_buybetter",label:"애널리스트 Buy 이상",ok:false,on:false},
+    ]
+  },
+  reversal: {
+    name:"반등 구간", en:"Reversal", icon:"↻", color:"#f5a623",
+    desc:"과매도 + 장기 구조 유지 종목 반등",
+    view:"v=211",
+    note:"RSI 과매도 + SMA20 하회이나 SMA200 위 유지 → 추세 내 조정 매수",
+    warn:"⚠ SMA200 아래까지 밀린 종목은 구조 붕괴 — 반등이 아닌 하락 지속 리스크",
+    exclusive:[],
+    filters:[
+      {code:"ta_rsi_os30",label:"RSI(14) < 30",ok:true,on:true},
+      {code:"ta_sma20_pb",label:"Price < SMA20",ok:true,on:true},
+      {code:"ta_sma200_pa",label:"Price > SMA200 (구조유지)",ok:true,on:true},
+      {code:"ta_sma50_pb",label:"Price < SMA50",ok:true,on:false},
+      {code:"ta_perf_13wdown",label:"13주 수익률 음(-) 확인",ok:true,on:false},
+    ]
+  },
+  surge: {
+    name:"급등 후보", en:"Surge Candidate", icon:"⚡", color:"#f5475a",
+    desc:"관심유입(상대거래량)+고점근접+추세 위 — 큰 변동 '특성' 풀 (예측 아님)",
+    view:"v=211", warnRed:true,
+    note:"분출 '전/초기' 후보 풀 — ⚠ 하단 '오늘 급등(분출)' 퀵링크와 목적 반대(추격 아님)",
+    warn:"⚠ 급등 예측 아님. 저유동·저float·고숏 종목은 급등만큼 급락·거래정지·펌프앤덤프 위험 동반 — 진입 전 촉매·base·유동성 반드시 수동확인.",
+    exclusive:[],
+    filters:[
+      {code:"ta_perf_4wup",label:"4주 수익률 양(+)",ok:true,on:true},
+      {code:"ta_highlow52w_b0to10h",label:"52W 고점 10% 이내",ok:true,on:true},
+      {code:"ta_sma50_pa",label:"Price > SMA50",ok:true,on:true},
+      {code:"sh_relvol_o1.5",label:"상대거래량 > 1.5x (관심유입)",ok:true,on:true},
+      {code:"sh_price_o5",label:"주가 > $5 (펌프존 회피)",ok:false,on:true},
+      {code:"ta_beta_o1.5",label:"Beta > 1.5 ⚠고변동",ok:false,on:false},
+      {code:"ta_gap_u",label:"오늘 갭업(이그니션) ⚠",ok:false,on:false},
+      {code:"fa_epsqoq_pos",label:"EPS Q/Q 성장 양(+)",ok:true,on:false},
+    ]
+  },
+  leaders: {
+    name:"모멘텀 리더", en:"Leaders", icon:"◆", color:"#4a9eff",
+    desc:"Minervini·O'Neil·Qullamaggie 공통 = Stage2 추세+신고가+상대강도+거래량 (Finviz 사전필터)",
+    view:"v=211", warnRed:true, warn:null,
+    note:"Finviz=95% 제거용 사전필터, 최종선택은 차트. 빌트인 프리셋(★)에서 방법론별 조합을 로드.",
+    exclusive:[],
+    filters:[
+      {code:"ta_sma50_pa",label:"Price > SMA50",ok:true,on:true},
+      {code:"ta_sma200_pa",label:"Price > SMA200",ok:true,on:true},
+      {code:"ta_sma50_sa200",label:"SMA50 > SMA200",ok:false,on:true},
+      {code:"ta_highlow52w_b0to25h",label:"52W 고점 25% 이내",ok:false,on:false},
+      {code:"ta_highlow52w_a30h",label:"52W 저점 +30%↑",ok:false,on:false},
+      {code:"ta_perf_13wup",label:"13주(분기) 상승 — 직전상승 근사",ok:true,on:true},
+      {code:"ta_perf_26wup",label:"26주(반기) 상승",ok:true,on:false},
+      {code:"fa_epsqoq_o20",label:"EPS Q/Q > 20% (CANSLIM/Minervini)",ok:false,on:false},
+      {code:"fa_salesqoq_pos",label:"매출 Q/Q 성장 양(+)",ok:true,on:false},
+      {code:"exch_nasd",label:"NASDAQ 한정 (Qullamaggie)",ok:false,on:false},
+      {code:"sh_price_o5",label:"주가 > $5 (펌프존 회피)",ok:false,on:true},
+    ]
+  },
+  short: {
+    name:"지수하락 숏후보", en:"Index-Down Short", icon:"▼", color:"#f5475a",
+    desc:"다우·나스닥 하락 국면 대비 — 추세 약세 + 고베타 '특성' 풀 (하락 예측 아님)",
+    view:"v=211", warnRed:true,
+    note:"약세 '특성' 종목 식별용 사전필터 — 지수 하락 '예상' 여부는 판단하지 않음(매크로 판단·헤지 결정은 별도). ⚠ 미검증 코드 다수 — Finviz 열람 후 작동 확인.",
+    warn:"⚠ 숏은 손실이 이론상 무제한. 이 스크리너는 약세 '특성' 보유 종목 풀 식별 도구일 뿐 하락 예측기가 아님. 저플로트·고숏비중 종목은 숏스퀴즈(급반등) 위험 — '숏비중 < 5%' 옵션으로 회피 권장.",
+    exclusive:[],
+    filters:[
+      {code:"ta_sma200_pb",label:"Price < SMA200 (장기 추세 약세)",ok:false,on:true},
+      {code:"ta_sma50_pb",label:"Price < SMA50 (중기 약세)",ok:true,on:true},
+      {code:"ta_sma20_pb",label:"Price < SMA20 (단기 약세)",ok:true,on:false},
+      {code:"ta_sma50_sb200",label:"SMA50 < SMA200 (데드크로스)",ok:false,on:false},
+      {code:"ta_perf_13wdown",label:"13주(분기) 수익률 음(-)",ok:true,on:true},
+      {code:"ta_perf_4wdown",label:"4주 수익률 음(-)",ok:false,on:false},
+      {code:"ta_beta_o1.5",label:"Beta > 1.5 (지수하락 민감·고베타)",ok:false,on:true},
+      {code:"ta_rsi_ob70",label:"RSI(14) > 70 — 과매수 반등 숏 구간",ok:false,on:false},
+      {code:"sh_short_u5",label:"숏비중 < 5% (숏스퀴즈 회피)",ok:false,on:false},
+      {code:"sh_price_o5",label:"주가 > $5 (저가 잡주 회피)",ok:false,on:true},
+    ]
+  }
+};
+
+const CMP = [
+  {item:"목적",vcp:"바닥 응집 후 돌파 초입",breakout:"브레이크아웃 포착",longtrend:"우상향 추세 편승",reversal:"추세 내 조정 매수",surge:"큰 변동 특성 풀",leaders:"리더/모멘텀 발굴(사전필터)"},
+  {item:"SMA 조건",vcp:"SMA20·50 회복(200선 무관)",breakout:"20·50·200 정배열+골든크로스",longtrend:"50·200 위+골든크로스",reversal:"SMA20 아래, SMA200 위",surge:"SMA50 위",leaders:"50·200 위, 50>200"},
+  {item:"52W 위치",vcp:"무관(저가 바닥)",breakout:"고점 3~10% 이내",longtrend:"상관 없음",reversal:"상관 없음",surge:"고점 10% 이내",leaders:"고점 25% 이내(옵션)"},
+  {item:"거래량",vcp:"RelVol > 1.5x",breakout:"평균 200K↑",longtrend:"평균 500K↑",reversal:"평균 500K↑",surge:"RelVol > 1.5x",leaders:"평균 100K↑"},
+  {item:"가격대",vcp:"< $10 (저가·저플로트)",breakout:"제한 없음",longtrend:"제한 없음",reversal:"제한 없음",surge:"> $5",leaders:"> $5"},
+  {item:"수익률",vcp:"N/A",breakout:"4주 양수",longtrend:"4·13·26주 전부 양수",reversal:"N/A",surge:"4주 양수",leaders:"13주 상승"},
+  {item:"목표가 필터",vcp:"N/A",breakout:"선택 (기본 OFF)",longtrend:"기본 ON (목표가≥현재가)",reversal:"N/A",surge:"N/A",leaders:"N/A"},
+  {item:"패턴/시그널 기본",vcp:"Multiple Bottom",breakout:"None / 상승패턴",longtrend:"None / 상승패턴",reversal:"Oversold",surge:"Unusual Volume",leaders:"None (프리셋별)"},
+  {item:"보유기간",vcp:"수일~수주",breakout:"2~8주",longtrend:"3개월+",reversal:"3~14일",surge:"수일~수주",leaders:"수주~수개월"},
+  {item:"핵심리스크",vcp:"바닥반등 실패·급락·정지·펌프",breakout:"가짜 브레이크아웃·파라볼릭",longtrend:"추세 전환",reversal:"하락 지속",surge:"급락·거래정지·펌프앤덤프",leaders:"Finviz 미지원지표 다수 → 차트 필수"},
+];
+
+/* 방법론 한계 고정 메시지 (D) */
+const METHOD_LIMITS = "⚠ Finviz 미지원: 150일선·IBD RS등급·ADR%·10일선·컨솔리데이션 타이트닝. Minervini/Qullamaggie 본인도 Finviz 단독 아님(Qullamaggie=TC2000). Finviz=사전필터, 최종선택=차트.";
+
+/* 빌트인 방법론 프리셋 (B) — filterOn에 ON 코드만 true, 나머지는 자동 OFF */
+const BUILTIN_PRESETS = [
+  {label:"Minervini Stage2 (Finviz 부분)", strat:"leaders",
+   filterOn:{ta_sma50_pa:true,ta_sma200_pa:true,ta_sma50_sa200:true,ta_highlow52w_b0to25h:true,ta_highlow52w_a30h:true,fa_epsqoq_o20:true,fa_salesqoq_pos:true,sh_price_o5:true},
+   signal:"", vol:"sh_avgvol_o100", cap:"cap_smallover", float:"", short:"",
+   src:"Minervini Trend Template — 150일선·RS등급≥70은 Finviz 불가 → 차트 확인"},
+  {label:"Qullamaggie 연속 브레이크아웃", strat:"leaders",
+   filterOn:{ta_sma50_pa:true,ta_perf_13wup:true,ta_highlow52w_b0to25h:true,exch_nasd:true,sh_price_o5:true},
+   signal:"", vol:"sh_avgvol_o500", cap:"", float:"", short:"",
+   src:"Qullamaggie 브레이크아웃 — ADR>4%·10/20일선·2~8주 타이트 컨솔은 Finviz 불가 → 차트"},
+  {label:"Qullamaggie Episodic Pivot", strat:"surge",
+   filterOn:{ta_gap_u:true,sh_price_o5:true},
+   signal:"ta_unusualvolume", vol:"sh_avgvol_o500", cap:"", float:"", short:"",
+   src:"Episodic Pivot — 갭≥10%·뉴스·ORH·당일 거래량 2배는 Finviz 정밀 불가 → 당일 확인"},
+  {label:"O'Neil CANSLIM-lite", strat:"leaders",
+   filterOn:{fa_epsqoq_o20:true,fa_salesqoq_pos:true,ta_highlow52w_b0to25h:true,ta_sma50_pa:true},
+   signal:"", vol:"sh_avgvol_o500", cap:"cap_midover", float:"", short:"",
+   src:"CAN SLIM — RS등급·기관수급·시장방향(M)은 별도 확인"},
+];
+
+/* 체크리스트: note=필터불가 안내, moved=필터로 흡수 */
+const CHECKLIST = [
+  {t:"SMA50 vs 현재가 괴리율 확인 (+50% 이상이면 파라볼릭 → 제외)",note:"Finviz 필터 불가 — 테이블 정렬/육안"},
+  {t:"Finviz 차트에서 Double Top / H&S 등 반전 패턴 유무 확인"},
+  {t:"내부자 매매 확인 (Finviz → Insider 탭, 대규모 매도 여부)"},
+  {t:"애널리스트 컨센서스 확인 (목표가가 현재가보다 낮으면 주의)",moved:"목표가 필터로 이동됨"},
+  {t:"최근 실적 발표일 확인 (5일 이내 실적이면 변동성 리스크)"},
+  {t:"단일일 급등 +8% 이상 여부 확인 (이벤트성이면 진입 보류)",note:"Finviz 필터 불가 — 테이블 정렬/육안"},
+];
+
+/* surge 전용 체크리스트 (전부 Finviz 필터 불가) — index 100+ */
+const SURGE_CHECK = [
+  "변동성 수축(VCP/타이트 base) 차트 확인 [필터 불가]",
+  "직전 거래량 마름(dry-up) 후 확장 확인 [필터 불가]",
+  "촉매(실적/뉴스/FDA 등) 존재 확인 — Major News 시그널 보조",
+  "저float/고숏: 거래정지·갭다운·스프레드 리스크 인지",
+  "이미 +X% 분출했는지(추격금지) — '오늘 급등(분출)' 퀵링크로 교차확인",
+];
+
+/* 📖 사용법 가이드 데이터 (v8) */
+const GUIDE_CARDS = [
+  {k:"vcp", an:"용수철처럼 잔뜩 눌렸다가 튀어오르려는 순간 찾기", find:"오래 바닥에서 옆으로 기던 싼 주식이 단기·중기 평균선을 막 넘고 거래가 붙는 것", when:"바닥 응집 후 '터지는 초입'을 노릴 때", pro:"오래 눌린 종목의 분출 초입을 노림 · 진입가가 낮음", warn:"저가·저플로트라 급락·거래정지·작전(펌프) 위험 큼. 200일선 한참 아래면 '진짜 추세'가 아닐 수 있어요. 이평 수렴·수축은 차트로 직접 봐야 해요"},
+  {k:"breakout", an:"출발 신호에 맞춰 막 달리기 시작한 선수 찾기", find:"이제 막 위로 오르기 시작한 주식", when:"오름이 '시작되는 순간'을 잡고 싶을 때", pro:"오름 시작점을 빨리 잡음 · 기준이 또렷함", warn:"살짝 올랐다 도로 내려가는 '가짜 돌파'가 있어요"},
+  {k:"longtrend", an:"계속 위로 가는 에스컬레이터에 올라타기", find:"오랫동안 꾸준히 오르는 튼튼한 주식", when:"마음 편히 오래 들고 가고 싶을 때", pro:"흔들림이 적어 편함 · 오래 보유하기 좋음", warn:"이미 많이 올라 느릴 수 있고, 추세가 꺾이면 내려야 해요"},
+  {k:"reversal", an:"트램펄린 — 잠깐 푹 꺼졌다 다시 튀어오르는 순간", find:"잠깐 떨어졌지만 바닥(200일 평균선)은 지키는 주식", when:"싸진 주식을 잠깐 노려보고 싶을 때", pro:"평소보다 싸게 사볼 기회", warn:"바닥(SMA200)이 뚫리면 튀어오름이 아니라 진짜 추락 — 가장 조심!"},
+  {k:"surge", an:"불붙이면 크게 터질 수도, 불발일 수도 있는 폭죽", find:"갑자기 크게 움직일 '특성'(거래 급증·고점 근접)을 가진 주식", when:"큰 변동이 날 만한 후보를 모아 볼 때", pro:"크게 움직일 수 있는 후보를 한곳에 모아줌", warn:"양날의 검 — 급등만큼 급락·거래정지·작전(펌프) 위험. '확실한 급등' 아님"},
+  {k:"leaders", an:"반 1·2등 친구 명단을, 유명 선생님(미네르비니·오닐·쿨라매기) 기준으로 뽑기", find:"시장을 이끄는 주도주(가장 힘센 주식)", when:"고수 방식으로 주도주를 보고 싶을 때", pro:"검증된 고수 방법(★빌트인 프리셋)을 한 번에 적용", warn:"Finviz가 못 보는 것(RS등급·ADR·150일선·바닥 다지기)은 차트로 따로 확인"},
+];
+const GUIDE_CMP = [
+  {k:"vcp", vol:"높음", sp:"빠름", df:"상", use:"바닥 응집 후 돌파 초입(고위험·저가)"},
+  {k:"breakout", vol:"중간", sp:"보통", df:"중", use:"오름 시작을 잡고 싶을 때"},
+  {k:"longtrend", vol:"낮음", sp:"느림", df:"하", use:"마음 편히 오래 들고 싶을 때"},
+  {k:"reversal", vol:"중간", sp:"빠름", df:"상", use:"싸게 잠깐 노릴 때(가장 조심)"},
+  {k:"surge", vol:"높음", sp:"빠름", df:"상", use:"큰 변동 후보(고위험)"},
+  {k:"leaders", vol:"중간", sp:"보통", df:"중상", use:"고수 방식 주도주(차트 필수)"},
+];
+
+/* vcp(수렴 돌파) 전용 체크리스트 — Finviz 미지원 항목 차트 확인용, index 200+ */
+const VCP_CHECK = [
+  "SMA20과 SMA50이 실제로 바짝 붙었는지(수렴) 차트로 확인 [Finviz 미지원]",
+  "돌파 직전 ATR/캔들이 줄어든 '수축'이 있었는지 차트 확인 [Finviz 미지원]",
+  "박스권 하단 지지가 유지됐는지(하방 경직) 확인",
+  "돌파 시 거래량이 평소보다 확연히 폭증했는지 확인",
+  "저플로트·저가 = 거래정지·갭다운·펌프 위험 인지 (ATPC형)",
+  "SMA200 한참 아래면 '바닥 반등'이지 추세 상승 아님 — 추격 주의",
+];
+
+const PATTERN_PREFIX = "ta_pattern_"; // ⚠ Elite 필터 가정 — URL 실측 후 "ta_p_"로 1줄 교체 가능
+const PATTERNS = [
+  {key:"horizontal", en:"Horizontal S/R", ko:"수평 지지·저항", dir:"neutral", strong:true,
+   desc:"가로 지지·저항선 — 돌파 방향에 따라 강세/약세 결정",
+   combo:["ta_highlow52w_b0to10h","ta_sma50_pa","sh_relvol_o1.5"],
+   src:"O'Neil flat base / Stockbee 4% breakout"},
+  {key:"tlresistance", en:"TL Resistance", ko:"추세선 저항", dir:"bear", strong:true,
+   desc:"우하향 추세선이 머리를 누름", combo:[], src:"Bulkowski Encyclopedia"},
+  {key:"tlsupport", en:"TL Support", ko:"추세선 지지", dir:"bull", strong:true,
+   desc:"우상향 추세선에서 가격이 튕겨오름",
+   combo:["ta_sma200_pa","sh_relvol_o1.5"], src:"일반 스윙 표준"},
+  {key:"wedgeup", en:"Wedge Up (Rising)", ko:"상승 쐐기 ★명칭반대", dir:"bear", strong:true,
+   desc:"가격은 오르지만 폭이 좁아짐 — 전통적으로 약세 반전",
+   combo:[], src:"Bulkowski Encyclopedia"},
+  {key:"wedgedown", en:"Wedge Down (Falling)", ko:"하락 쐐기 ★명칭반대", dir:"bull", strong:true,
+   desc:"가격은 내리지만 폭이 좁아짐 — 전통적으로 강세 반전",
+   combo:["ta_sma200_pa","sh_relvol_o1.5"], src:"Bulkowski Encyclopedia"},
+  {key:"triangleascending", en:"Triangle Ascending", ko:"상승 삼각형", dir:"bull", strong:true,
+   desc:"윗선 수평 + 아랫선 상승 — 위로 돌파 셋업",
+   combo:["ta_highlow52w_b0to10h","ta_sma50_pa","sh_relvol_o1.5","fa_epsqoq_pos"],
+   src:"Minervini VCP 후기 / O'Neil flat base"},
+  {key:"triangledescending", en:"Triangle Descending", ko:"하락 삼각형", dir:"bear", strong:true,
+   desc:"아랫선 수평 + 윗선 하락 — 아래로 이탈 셋업",
+   combo:[], src:"Bulkowski Encyclopedia"},
+  {key:"wedge", en:"Wedge (Symmetric)", ko:"대칭 쐐기", dir:"neutral", strong:true,
+   desc:"양쪽이 모이는 쐐기 — 돌파 방향 결정 전 보류",
+   combo:[], src:"Bulkowski"},
+  {key:"channelup", en:"Channel Up", ko:"상승 채널", dir:"bull", strong:true,
+   desc:"평행 우상향 채널 — 추세 지속",
+   combo:["ta_sma50_pa","ta_perf_4wup","sh_relvol_o1.5"],
+   src:"Qullamaggie 컨솔리데이션 돌파 / Minervini"},
+  {key:"channeldown", en:"Channel Down", ko:"하락 채널", dir:"bear", strong:true,
+   desc:"평행 우하향 채널", combo:[], src:"Bulkowski"},
+  {key:"channel", en:"Channel (Sideways)", ko:"횡보 채널", dir:"neutral", strong:true,
+   desc:"수평 채널 — 돌파 대기", combo:[], src:"Bulkowski"},
+  {key:"doubletop", en:"Double Top", ko:"이중 천장 (M자)", dir:"bear", strong:false,
+   desc:"두 번 같은 고점을 못 뚫음 — 하락 반전",
+   combo:[], src:"Bulkowski Encyclopedia"},
+  {key:"doublebottom", en:"Double Bottom", ko:"이중 바닥 (W자)", dir:"bull", strong:false,
+   desc:"두 번 같은 저점에서 튕김 — 상승 반전",
+   combo:["ta_sma200_pa","sh_relvol_o1.5"], src:"Bulkowski Encyclopedia"},
+  {key:"multipletop", en:"Multiple Top", ko:"다중 천장", dir:"bear", strong:false,
+   desc:"여러 번 같은 고점에서 막힘 — 분배",
+   combo:[], src:"Bulkowski"},
+  {key:"multiplebottom", en:"Multiple Bottom", ko:"다중 바닥", dir:"bull", strong:false,
+   desc:"여러 번 같은 저점에서 지지 — 축적",
+   combo:["ta_sma200_pa","sh_relvol_o1.5"], src:"Bulkowski"},
+  {key:"headandshoulders", en:"Head and Shoulders", ko:"머리어깨", dir:"bear", strong:false,
+   desc:"세 봉우리 중 가운데가 가장 높음 — 주요 하락 반전",
+   combo:[], src:"Bulkowski / 클래식"},
+  {key:"headandshouldersinv", en:"Head and Shoulders Inverse", ko:"역 머리어깨", dir:"bull", strong:false,
+   desc:"세 골짜기 중 가운데가 가장 깊음 — 주요 상승 반전",
+   combo:["ta_sma50_pa","sh_relvol_o1.5","fa_epsqoq_pos"], src:"Bulkowski / 클래식"},
+];
+/* PATTERN_OPTS — PATTERNS에서 자동 생성 (base + Strong) */
+const PATTERN_OPTS = [{v:"", label:"Off", ok:true, dir:"neutral"}];
+PATTERNS.forEach(p=>{
+  PATTERN_OPTS.push({v:PATTERN_PREFIX+p.key, label:p.en, ok:false, dir:p.dir});
+  if(p.strong) PATTERN_OPTS.push({v:PATTERN_PREFIX+p.key+"2", label:p.en+" (Strong)", ok:false, dir:p.dir});
+});
+const DIR_INFO = {
+  bull:{badge:"🟢 강세", color:"#00d4aa", label:"강세 패턴"},
+  bear:{badge:"🔴 약세", color:"#f5475a", label:"약세 패턴"},
+  neutral:{badge:"⚪ 중립", color:"#a78bfa", label:"중립 / 돌파 대기"}
+};
+
+/* ===== state ===== */
+let state = {
+  strat:"vcp",
+  filters:{},
+  signal:{vcp:"", breakout:"", longtrend:"", reversal:"ta_oversold", surge:"ta_unusualvolume", leaders:"", short:""},
+  vol:{vcp:"sh_avgvol_o100", breakout:"sh_avgvol_o200", longtrend:"sh_avgvol_o500", reversal:"sh_avgvol_o500", surge:"sh_avgvol_o500", leaders:"sh_avgvol_o100", short:"sh_avgvol_o500"},
+  cap:{vcp:"", breakout:"", longtrend:"", reversal:"", surge:"", leaders:"cap_smallover", short:"cap_midover"},
+  float:{vcp:"", breakout:"", longtrend:"", reversal:"", surge:"", leaders:"", short:""},
+  short:{vcp:"", breakout:"", longtrend:"", reversal:"", surge:"", leaders:"", short:""},
+  pattern:{vcp:"ta_pattern_multiplebottom", breakout:"", longtrend:"", reversal:"", surge:"", leaders:"", short:""},
+  showCmp:false,
+  showGuide:false,
+  showPatterns:false,
+  checks:[],
+  preset:"",
+  builtinSrc:"",
+  presets:{}
+};
+Object.entries(STRATEGIES).forEach(([k,v])=>{ state.filters[k]=v.filters.map(f=>({...f})); });
+
+/* 기본값 스냅샷 (J 리셋용) — localStorage 적용 전 캡처 */
+const DEFAULTS = {filters:{}, signal:{...state.signal}, vol:{...state.vol}, cap:{...state.cap}, float:{...state.float}, short:{...state.short}, pattern:{...state.pattern}};
+Object.keys(state.filters).forEach(sk=>{ DEFAULTS.filters[sk]=state.filters[sk].map(f=>({...f})); });
+
+/* ===== localStorage 안전 래퍼 (아티팩트 샌드박스/파일실행 모두 비충돌) ===== */
+const LS_KEY="finviz_screener_v5";
+function sGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function sSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function persist(){
+  const filterOn={};
+  Object.keys(state.filters).forEach(sk=>{ filterOn[sk]={}; state.filters[sk].forEach(f=>{ filterOn[sk][f.code]=f.on; }); });
+  sSet(LS_KEY, JSON.stringify({strat:state.strat,filterOn,signal:state.signal,vol:state.vol,cap:state.cap,float:state.float,short:state.short,checks:state.checks,showCmp:state.showCmp,showGuide:state.showGuide,showPatterns:state.showPatterns,pattern:state.pattern,presets:state.presets}));
+}
+function loadPersisted(){
+  const raw=sGet(LS_KEY); if(!raw) return;
+  let s; try{ s=JSON.parse(raw); }catch(e){ return; }
+  if(!s||typeof s!=="object") return;
+  if(s.strat && STRATEGIES[s.strat]) state.strat=s.strat;
+  if(s.signal) Object.keys(state.signal).forEach(k=>{ if(typeof s.signal[k]==="string") state.signal[k]=s.signal[k]; });
+  if(s.vol) Object.keys(state.vol).forEach(k=>{ if(typeof s.vol[k]==="string") state.vol[k]=s.vol[k]; });
+  if(s.cap) Object.keys(state.cap).forEach(k=>{ if(typeof s.cap[k]==="string") state.cap[k]=s.cap[k]; });
+  if(s.float) Object.keys(state.float).forEach(k=>{ if(typeof s.float[k]==="string") state.float[k]=s.float[k]; });
+  if(s.short) Object.keys(state.short).forEach(k=>{ if(typeof s.short[k]==="string") state.short[k]=s.short[k]; });
+  if(s.pattern) Object.keys(state.pattern).forEach(k=>{ if(typeof s.pattern[k]==="string") state.pattern[k]=s.pattern[k]; });
+  if(Array.isArray(s.checks)) state.checks=s.checks.filter(n=>Number.isInteger(n));
+  if(typeof s.showCmp==="boolean") state.showCmp=s.showCmp;
+  if(typeof s.showGuide==="boolean") state.showGuide=s.showGuide;
+  if(typeof s.showPatterns==="boolean") state.showPatterns=s.showPatterns;
+  if(s.presets && typeof s.presets==="object") state.presets=s.presets;
+  if(s.filterOn){
+    Object.keys(state.filters).forEach(sk=>{ const fo=s.filterOn[sk]; if(!fo) return;
+      state.filters[sk].forEach(f=>{ if(typeof fo[f.code]==="boolean") f.on=fo[f.code]; }); });
+  }
+}
+loadPersisted();
+
+/* ===== URL 빌더 ===== */
+function buildURL(sk, override){
+  override = override || {};
+  const codes=[];
+  state.filters[sk].forEach(f=>{ if(f.on) codes.push(f.code); });
+  if(state.vol[sk]) codes.push(state.vol[sk]);
+  if(state.cap[sk]) codes.push(state.cap[sk]);
+  if(state.float[sk]) codes.push(state.float[sk]);
+  if(state.short[sk]) codes.push(state.short[sk]);
+  if(state.pattern[sk]) codes.push(state.pattern[sk]);
+  const view = override.view || STRATEGIES[sk].view;
+  let url=`https://finviz.com/screener.ashx?${view}&f=${codes.join(",")}`;
+  const sig = (Object.prototype.hasOwnProperty.call(override,"signal")) ? override.signal : state.signal[sk];
+  if(sig) url+=`&s=${sig}`;
+  return url;
+}
+function activeCodeCount(sk){
+  return state.filters[sk].filter(f=>f.on).length + (state.vol[sk]?1:0) + (state.cap[sk]?1:0) + (state.float[sk]?1:0) + (state.short[sk]?1:0) + (state.pattern[sk]?1:0);
+}
+function unverifiedCount(sk){
+  let n = state.filters[sk].filter(f=>f.on && !f.ok).length;
+  const sig=SIGNALS.find(s=>s.v===state.signal[sk]); if(sig && !sig.ok && sig.v) n++;
+  const vo=VOL_OPTS.find(o=>o.v===state.vol[sk]); if(vo && !vo.ok && vo.v) n++;
+  const co=CAP_OPTS.find(o=>o.v===state.cap[sk]); if(co && !co.ok && co.v) n++;
+  const fo=FLOAT_OPTS.find(o=>o.v===state.float[sk]); if(fo && !fo.ok && fo.v) n++;
+  const so=SHORT_OPTS.find(o=>o.v===state.short[sk]); if(so && !so.ok && so.v) n++;
+  const po=PATTERN_OPTS.find(o=>o.v===state.pattern[sk]); if(po && !po.ok && po.v) n++;
+  return n;
+}
+function smaConflicts(sk){
+  const on=new Set(state.filters[sk].filter(f=>f.on).map(f=>f.code));
+  const pairs=[["ta_sma20_pa","ta_sma20_pb"],["ta_sma50_pa","ta_sma50_pb"],["ta_sma200_pa","ta_sma200_pb"]];
+  const c=[]; pairs.forEach(p=>{ if(on.has(p[0])&&on.has(p[1])) c.push(p[0].replace("ta_","").replace("_pa","")); });
+  return c;
+}
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function render(){
+  /* 포커스/스크롤 보존 (L) */
+  const ae=document.activeElement;
+  const fk=(ae&&ae.getAttribute)?ae.getAttribute("data-fk"):null;
+  const sy=window.scrollY;
+
+  const sk=state.strat, cs=STRATEGIES[sk];
+  const activeN=state.filters[sk].filter(f=>f.on).length;
+  const unverN=unverifiedCount(sk);
+  const url=buildURL(sk);
+  const sig=SIGNALS.find(s=>s.v===state.signal[sk]);
+  const conflicts=smaConflicts(sk);
+  const presetNames=Object.keys(state.presets);
+
+  /* surge 전용 임계값 셀 (C) */
+  const thrExtra = (sk==='surge') ? `
+      <div>
+        <span class="thr-label">FLOAT</span>
+        <select class="fv-select" data-fk="floatsel" onchange="setFloat('${sk}',this.value)">
+          ${FLOAT_OPTS.map(o=>`<option value="${o.v}" ${state.float[sk]===o.v?'selected':''}>${esc(o.label)}${(!o.ok&&o.v)?' ⚠':''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <span class="thr-label">SHORT FLOAT</span>
+        <select class="fv-select" data-fk="shortsel" onchange="setShort('${sk}',this.value)">
+          ${SHORT_OPTS.map(o=>`<option value="${o.v}" ${state.short[sk]===o.v?'selected':''}>${esc(o.label)}${(!o.ok&&o.v)?' ⚠':''}</option>`).join('')}
+        </select>
+      </div>` : '';
+
+  /* surge 전용 체크리스트 (F) */
+  const surgeChecks = (sk==='surge') ? `
+      <div class="checklist-title" style="margin-top:16px;color:var(--red)">급등 후보 추가 확인 — 전부 Finviz 필터 불가</div>
+      ${SURGE_CHECK.map((c,j)=>{ const ci=100+j; const ck=state.checks.includes(ci);
+        return `<div class="check-item" data-fk="chk-${ci}" role="checkbox" tabindex="0" aria-checked="${ck}" onclick="toggleCheck(${ci})" onkeydown="kd(event)" style="cursor:pointer">
+          <div class="check-box ${ck?'checked':''}">${ck?'✓':''}</div>
+          <span class="check-text ${ck?'checked':''}">${esc(c)}</span>
+        </div>`; }).join('')}` : '';
+
+  /* vcp 전용 체크리스트 (v10) */
+  const vcpChecks = (sk==='vcp') ? `
+      <div class="checklist-title" style="margin-top:16px;color:var(--accent)">수렴 돌파 추가 확인 — Finviz 미지원(차트 필수)</div>
+      ${VCP_CHECK.map((c,j)=>{ const ci=200+j; const ck=state.checks.includes(ci);
+        return `<div class="check-item" data-fk="chk-${ci}" role="checkbox" tabindex="0" aria-checked="${ck}" onclick="toggleCheck(${ci})" onkeydown="kd(event)" style="cursor:pointer">
+          <div class="check-box ${ck?'checked':''}">${ck?'✓':''}</div>
+          <span class="check-text ${ck?'checked':''}">${esc(c)}</span>
+        </div>`; }).join('')}` : '';
+
+  /* 📊 패턴 가이드 그룹 (v9) */
+  const patternGroups = ['bull','bear','neutral'].map(d=>{
+    const items = PATTERNS.map((p,i)=>({p,i})).filter(x=>x.p.dir===d);
+    if(!items.length) return '';
+    const info = DIR_INFO[d];
+    return `<div class="guide-h" style="color:${info.color}">${info.badge} ${info.label} (${items.length})</div>
+      <div class="pat-grid">${items.map(({p,i})=>`
+        <div class="pat-card" style="border-left-color:${info.color}">
+          <div class="pat-head">
+            <span class="pat-badge" style="color:${info.color};border-color:${info.color}">${info.badge}</span>
+            <span class="pat-name">${esc(p.en)} <span class="pat-ko">${esc(p.ko)}</span></span>
+          </div>
+          <div class="pat-desc">${esc(p.desc)}</div>
+          ${p.combo.length?`<div class="pat-combo"><b>권장 보조</b>${p.combo.map(c=>`<code>${c}</code>`).join('')}</div>`:''}
+          <div class="pat-src">출처: ${esc(p.src)}</div>
+          <button class="mini-btn" data-fk="pat-apply-${i}" onclick="applyPatternPreset(${i})">이 설정으로 적용 →</button>
+        </div>`).join('')}</div>`;
+  }).join('');
+
+  let html=`
+  <div class="strat-row">
+    ${Object.entries(STRATEGIES).map(([k,v])=>`
+      <div class="strat-btn ${sk===k?'active':''}" data-fk="strat-${k}" role="button" tabindex="0" aria-pressed="${sk===k}" onclick="setSt('${k}')" onkeydown="kd(event)"
+        style="${sk===k?`background:${hex2rgba(v.color,0.12)};border-color:${v.color};color:${v.color}`:''}">
+        <div class="icon">${v.icon}</div>
+        <div class="name">${v.name}</div>
+        <div class="en">${v.en}</div>
+      </div>`).join('')}
+  </div>
+
+  <div class="desc-box">
+    <div class="desc-title" style="color:${cs.color}">${cs.icon} ${cs.desc}</div>
+    <div class="desc-meta">활성 필터 <span style="color:${cs.color}">${activeN}개</span>
+      ${unverN>0?`<span style="color:var(--yellow);margin-left:8px">⚠ 미검증 ${unverN}개</span>`:''}
+    </div>
+    <div class="note-box" style="background:${hex2rgba(cs.color,0.06)};border-color:${cs.color};color:${cs.color}">
+      ${cs.note}
+    </div>
+  </div>
+
+  ${cs.warn?`<div class="warn-box${cs.warnRed?' red':''}">${cs.warn}</div>`:''}
+  ${(sig&&sig.rev&&sk!=='short')?`<div class="warn-box red">⚠ 상승전략에 부적합한 반전 시그널(${esc(sig.label)}) — 제외 대상 식별용으로만 사용</div>`:''}
+  ${(()=>{ const po=PATTERN_OPTS.find(o=>o.v===state.pattern[sk]); return (po&&po.dir==='bear')?`<div class="warn-box red">⚠ 약세 패턴 선택(${esc(po.label)}) — 매수전략과 방향 반대. 숏/회피용으로만 사용.</div>`:''; })()}
+  ${conflicts.length?`<div class="warn-box red">⚠ 논리 모순: ${conflicts.join(', ')} 의 Price>SMA 와 Price&lt;SMA 가 동시 ON — 결과 0건 가능</div>`:''}
+  ${(sk==='leaders'||state.builtinSrc)?`<div class="warn-box red">${METHOD_LIMITS}</div>`:''}
+  ${state.builtinSrc?`<div class="warn-box" style="background:var(--s3);border-color:var(--border);color:var(--muted)">출처: ${esc(state.builtinSrc)}</div>`:''}
+
+  <div class="section">
+    <div class="filter-title">SIGNAL (단일 선택 · s=)</div>
+    <select class="fv-select" data-fk="sigsel" onchange="setSignal('${sk}',this.value)">
+      ${SIGNALS.map(s=>`<option value="${s.v}" ${state.signal[sk]===s.v?'selected':''}>${esc(s.label)}${(!s.ok&&s.v)?' ⚠':''}</option>`).join('')}
+    </select>
+  </div>
+
+  <div class="section">
+    <div class="filter-title">THRESHOLDS</div>
+    <div class="thr-grid">
+      <div>
+        <span class="thr-label">AVG VOLUME</span>
+        <select class="fv-select" data-fk="volsel" onchange="setVol('${sk}',this.value)">
+          ${VOL_OPTS.map(o=>`<option value="${o.v}" ${state.vol[sk]===o.v?'selected':''}>${esc(o.label)}${(!o.ok&&o.v)?' ⚠':''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <span class="thr-label">MARKET CAP</span>
+        <select class="fv-select" data-fk="capsel" onchange="setCap('${sk}',this.value)">
+          ${CAP_OPTS.map(o=>`<option value="${o.v}" ${state.cap[sk]===o.v?'selected':''}>${esc(o.label)}${(!o.ok&&o.v)?' ⚠':''}</option>`).join('')}
+        </select>
+      </div>${thrExtra}
+    </div>
+    <div style="margin-top:10px">
+      <span class="thr-label">CHART PATTERN (Elite ⚠)</span>
+      <select class="fv-select" data-fk="patsel" onchange="setPattern('${sk}',this.value)">
+        ${PATTERN_OPTS.map(o=>`<option value="${o.v}" ${state.pattern[sk]===o.v?'selected':''}>${esc(o.label)}${(!o.ok&&o.v)?' ⚠':''}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  <div class="filter-section">
+    <div class="filter-title">FILTER CONFIGURATION</div>
+    ${state.filters[sk].map((f,i)=>`
+      <div class="filter-row ${f.on?'on':''}" data-fk="filt-${sk}-${i}" role="button" tabindex="0" aria-pressed="${f.on}" onclick="toggleF('${sk}',${i})" onkeydown="kd(event)"
+        style="${f.on?`background:${hex2rgba(cs.color,0.07)};border-color:${hex2rgba(cs.color,0.3)}`:''}">
+        <div class="toggle" style="background:${f.on?cs.color:'var(--dim)'}">
+          <div class="knob" style="left:${f.on?'17px':'2px'}"></div>
+        </div>
+        <span class="filter-label" style="color:${f.on?'var(--text)':'var(--muted)'}">${f.label}</span>
+        ${!f.ok?'<span class="filter-warn">⚠</span>':''}
+        <span class="filter-code">${f.code}</span>
+      </div>`).join('')}
+  </div>
+
+  <div class="section">
+    <div class="filter-title">PRESETS</div>
+    <div class="preset-row">
+      <button class="mini-btn" data-fk="preset-save" onclick="savePreset('${sk}')">＋ 현재 설정 저장</button>
+      <select class="fv-select" style="width:auto;min-width:210px" data-fk="preset-sel" onchange="loadPreset(this.value)">
+        <option value="">프리셋 불러오기…</option>
+        <optgroup label="방법론 (빌트인)">
+          ${BUILTIN_PRESETS.map((p,i)=>`<option value="__b_${i}" ${state.preset==='__b_'+i?'selected':''}>★ ${esc(p.label)}</option>`).join('')}
+        </optgroup>
+        ${presetNames.length?`<optgroup label="내 프리셋">${presetNames.map(n=>`<option value="${esc(n)}" ${state.preset===n?'selected':''}>${esc(n)}</option>`).join('')}</optgroup>`:''}
+      </select>
+      <button class="mini-btn" data-fk="preset-del" onclick="delPresetPrompt()">선택 삭제</button>
+      <button class="mini-btn" data-fk="preset-reset" onclick="resetStrat('${sk}')">↺ 기본값 복원</button>
+    </div>
+  </div>
+
+  <div class="url-section">
+    <div class="filter-title">GENERATED FINVIZ URL</div>
+    <div class="url-box">
+      <span class="url-host">finviz.com/screener.ashx</span><span class="url-params">${esc(url.replace('https://finviz.com/screener.ashx',''))}</span>
+    </div>
+    ${activeCodeCount(sk)===0 && !state.signal[sk] ? `<div class="warn-box red">⚠ 활성 필터·시그널 0개 — 전체 종목 반환됨</div>` : ''}
+    ${unverN>0?`<div class="warn-box">⚠ 미검증 코드 ${unverN}개 — Finviz 열람 후 필터 작동 여부 확인 필요</div>`:''}
+    <div class="btn-row">
+      <button class="btn-primary" data-fk="open-main" style="background:${cs.color};color:var(--bg)" onclick="openURL(buildURL('${sk}'))">FINVIZ에서 열기 →</button>
+      <button class="btn-secondary" data-fk="open-gainers" title="이미 분출한 종목 — 추격 금지·진입보류 식별용 (surge 전략과 목적 반대)" onclick="openGainers('${sk}')">오늘 급등(분출)·추격금지</button>
+      <button class="btn-secondary" data-fk="open-tech" onclick="openTech('${sk}')">Technical 뷰</button>
+      <button class="btn-secondary" id="copyBtn" data-fk="copy-btn" onclick="copyURL()">URL 복사</button>
+      <input class="tv-input" data-fk="tv-ticker" placeholder="티커 예: TXN" value="${esc(tvTicker).replace(/"/g,'&quot;')}" oninput="setTvTicker(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();openTV();}">
+      <button class="btn-secondary" data-fk="open-tv" title="입력 티커를 TradingView 저장 레이아웃(DZbBNbgX)으로 열기" onclick="openTV()">TradingView 차트 →</button>
+      <button class="btn-secondary" data-fk="open-gemini" title="Gemini Gem(분석 어시스턴트) 열기 — 고정 링크" onclick="openGemini()">Gemini Gem →</button>
+    </div>
+  </div>
+
+  <div class="cmp-section">
+    <div class="cmp-header" data-fk="cmp-hdr" role="button" tabindex="0" aria-expanded="${state.showCmp}" onclick="toggleCmp()" onkeydown="kd(event)">
+      <span>전략 비교표</span><span>${state.showCmp?'▲':'▼'}</span>
+    </div>
+    ${state.showCmp?`<div style="padding:0 14px 14px;overflow-x:auto">
+      <table class="cmp-table">
+        <thead><tr>
+          <th style="text-align:left;color:var(--muted)">항목</th>
+          <th style="color:#00d4aa">수렴돌파 ≣</th>
+          <th style="color:#a78bfa">상승초입 ↗</th>
+          <th style="color:#4a9eff">장기상승 ◉</th>
+          <th style="color:#f5a623">반등 ↻</th>
+          <th style="color:#f5475a">급등후보 ⚡</th>
+          <th style="color:#4a9eff">리더 ◆</th>
+        </tr></thead>
+        <tbody>${CMP.map(r=>`<tr>
+          <td style="text-align:left;color:var(--muted)">${r.item}</td>
+          <td>${r.vcp||'-'}</td><td>${r.breakout}</td><td>${r.longtrend}</td><td>${r.reversal}</td><td>${r.surge||'-'}</td><td>${r.leaders||'-'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`:''}
+  </div>
+
+  <div class="cmp-section">
+    <div class="cmp-header" data-fk="guide-hdr" role="button" tabindex="0" aria-expanded="${state.showGuide}" onclick="toggleGuide()" onkeydown="kd(event)">
+      <span>📖 사용법 가이드 (초등학생도 OK)</span><span>${state.showGuide?'▲':'▼'}</span>
+    </div>
+    ${state.showGuide?`<div style="padding:0 14px 14px">
+      <div class="guide-box" style="border-color:var(--ab);color:var(--text)">
+        ① 스크리너 = 1단계 후보 추리기(수천 개 → 수십 개). 사는 결정은 차트·뉴스·리스크관리로 따로.<br>
+        ② Finviz 단독 매매 금지. &nbsp; ③ 어떤 도구도 손실을 0으로 만들지 않아요. &nbsp; ④ 교육용이며 투자 권유 아님.
+      </div>
+
+      <div class="guide-h">6개 도구, 쉽게 알아보기</div>
+      ${GUIDE_CARDS.map(c=>{ const s=STRATEGIES[c.k]; return `
+        <div class="guide-card" style="border-left-color:${s.color}">
+          <h4 style="color:${s.color}">${s.icon} ${s.name} <span class="en">(${s.en})</span></h4>
+          <div class="guide-row"><b>비유 ·</b>${esc(c.an)}</div>
+          <div class="guide-row"><b>찾는 것 ·</b>${esc(c.find)}</div>
+          <div class="guide-row"><b>언제 ·</b>${esc(c.when)}</div>
+          <div class="guide-row"><b>장점 ·</b>${esc(c.pro)}</div>
+          <div class="guide-row guide-warn"><b>주의 ·</b>${esc(c.warn)}</div>
+        </div>`; }).join('')}
+      <div class="guide-box">용어 쉽게: RSI(주가가 너무 많이 떨어졌는지 보는 눈금) · SMA(요즘 평균 가격선) · 골든크로스(짧은 평균선이 긴 평균선 위로 올라타는 것) · 52주 고점(1년 중 가장 높았던 값)</div>
+
+      <div class="guide-h">한눈 비교</div>
+      <div style="overflow-x:auto"><table class="guide-table">
+        <thead><tr><th>도구</th><th>변동성</th><th>속도</th><th>난이도</th><th>한 줄 쓰임</th></tr></thead>
+        <tbody>${GUIDE_CMP.map(r=>{ const s=STRATEGIES[r.k]; return `<tr>
+          <td style="color:${s.color}">${s.icon} ${s.name}</td><td>${r.vol}</td><td>${r.sp}</td><td>${r.df}</td><td>${esc(r.use)}</td>
+        </tr>`; }).join('')}</tbody>
+      </table></div>
+
+      <div class="guide-h">"얼마나 잘 맞나? %" — 솔직한 답</div>
+      <div class="guide-box" style="color:var(--text);border-color:rgba(245,166,35,.3)">
+        <b style="color:var(--yellow)">핵심 한마디 ·</b> 이 도구는 미래를 맞히는 게 아니라, 수천 개 주식 중 조건에 맞는 애들만 '그물'로 건져줘요. 그래서 "몇 % 맞는다"는 <b style="color:var(--yellow)">고정된 숫자가 없어요.</b>
+      </div>
+      <div class="guide-row"><b>적중률을 정하는 건 도구가 아니라:</b> ① 언제 사고 파는지 ② 얼마나 사는지 ③ 시장 전체 분위기 ④ 사람이 규칙을 지키는지 — 스크리너는 '후보 명단'만 줘요.</div>
+      <div class="guide-box">
+        <div class="guide-row"><b style="color:var(--accent)">진짜 데이터(출처 있음) ·</b> 유명 트레이더 Qullamaggie도 승률은 약 25~30%였지만, '잃을 땐 조금·딸 땐 크게'로 큰 수익을 냈어요. <span style="color:var(--muted)">[출처: 공개 인터뷰/프로필 · 전제: 그의 진입·청산·비중관리 포함, 스크리너 단독 아님]</span></div>
+        <div class="guide-row" style="color:var(--muted)">(참고) 본인 과거 백테스트 예: MR 승률 73.6%/PF 1.55, MOM 58.2%/PF 1.44 — 진입·청산 규칙 포함된 'APEX' 결과이며 이 스크리너 단독 수치 아님.</div>
+        <div class="guide-row"><b style="color:var(--accent)">교훈 ·</b> 많이 맞히기가 목표가 아니라, 틀리면 빨리 멈추고(손절) 맞으면 길게 가는 게 핵심.</div>
+      </div>
+      <div class="guide-row guide-warn"><b>주의 ·</b> 각 도구에 'OO% 적중' 같은 숫자는 일부러 안 붙였어요(근거 없는 거짓이라서).</div>
+      <div class="guide-row">정확한 %를 알고 싶다면: 살 때·팔 때 규칙을 먼저 정하고 과거 데이터로 '백테스트'해야 측정돼요. 스크리너만으로는 못 구해요.</div>
+
+      <div class="guide-box" style="border-color:var(--ab);color:var(--text);margin-top:14px">
+        다시 한 번 — ① 스크리너는 후보 추리기일 뿐  ② 최종 판단은 차트·뉴스·리스크관리  ③ Finviz 단독 매매 금지  ④ 교육용, 투자 권유 아님.
+      </div>
+    </div>`:''}
+  </div>
+
+  <div class="cmp-section">
+    <div class="cmp-header" data-fk="pat-hdr" role="button" tabindex="0" aria-expanded="${state.showPatterns}" onclick="togglePatterns()" onkeydown="kd(event)">
+      <span>📊 패턴 가이드 (28종 · Elite Pattern 필터)</span><span>${state.showPatterns?'▲':'▼'}</span>
+    </div>
+    ${state.showPatterns?`<div style="padding:0 14px 14px">
+      <div class="guide-box" style="border-color:rgba(245,166,35,.4);color:var(--yellow)">
+        ⚠ <b>명칭 함정 주의 ·</b> Finviz "Wedge Up/Down"은 *기울기* 방향이지 *매매* 방향이 아닙니다.
+        Rising Wedge(상승쐐기)=<b>약세</b>, Falling Wedge(하락쐐기)=<b>강세</b> (전통 차트패턴 학계 통설).
+      </div>
+      <div class="guide-box" style="color:var(--text)">
+        <b style="color:var(--accent)">패턴 = 가능성·후보 지정.</b> 확실한 예측 아님. 진입 전 차트·뉴스·리스크관리 필수.
+        Bulkowski Encyclopedia는 패턴별 통계의 표준 서지(숫자는 책 직접 확인).
+      </div>
+      ${patternGroups}
+      <div class="guide-box" style="border-color:var(--ab);color:var(--text);margin-top:14px">
+        ① 패턴 코드 접두는 ⚠ 미검증(<code>${PATTERN_PREFIX}</code>) — Elite에서 1개 적용 후 URL 확인 권장.
+        ② 약세 패턴은 매수전략과 방향 반대 — 클릭 시 확인창. ③ "이 설정으로 적용"은 현재 전략의 보조필터를 토글하며, 임계(vol/cap)는 그대로 둠.
+      </div>
+    </div>`:''}
+  </div>
+
+  <div class="checklist">
+    <div class="checklist-title">스크리닝 후 수동 확인 체크리스트</div>
+    ${CHECKLIST.map((c,i)=>{
+      if(c.moved){
+        return `<div class="check-item chk-moved">
+          <div class="check-box"></div>
+          <span class="check-text">${c.t}<span class="moved-tag">→ ${c.moved}</span></span>
+        </div>`;
+      }
+      const checked=state.checks.includes(i);
+      return `<div class="check-item" data-fk="chk-${i}" role="checkbox" tabindex="0" aria-checked="${checked}" onclick="toggleCheck(${i})" onkeydown="kd(event)" style="cursor:pointer">
+        <div class="check-box ${checked?'checked':''}">${checked?'✓':''}</div>
+        <span class="check-text ${checked?'checked':''}">${c.t}${c.note?`<span class="note-inline">(${c.note})</span>`:''}</span>
+      </div>`;
+    }).join('')}
+    ${surgeChecks}
+    ${vcpChecks}
+  </div>`;
+
+  document.getElementById('app').innerHTML=html;
+
+  /* 포커스/스크롤 복원 (L) */
+  if(fk){ const el=document.querySelector('[data-fk="'+fk+'"]'); if(el) el.focus(); }
+  window.scrollTo(0,sy);
+}
+
+/* ===== 이벤트 핸들러 ===== */
+function kd(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); e.currentTarget.click(); } }
+function clearPreset(){ state.preset=""; state.builtinSrc=""; }
+function setSt(k){ state.strat=k; clearPreset(); persist(); render(); }
+function toggleF(sk,i){
+  const f=state.filters[sk][i]; f.on=!f.on;
+  if(f.on){
+    const grp=(STRATEGIES[sk].exclusive||[]).find(g=>g.indexOf(f.code)>=0);
+    if(grp){ state.filters[sk].forEach(o=>{ if(o.code!==f.code && grp.indexOf(o.code)>=0) o.on=false; }); }
+  }
+  clearPreset(); persist(); render();
+}
+function setSignal(sk,v){ state.signal[sk]=v; clearPreset(); persist(); render(); }
+function setVol(sk,v){ state.vol[sk]=v; clearPreset(); persist(); render(); }
+function setCap(sk,v){ state.cap[sk]=v; clearPreset(); persist(); render(); }
+function setFloat(sk,v){ state.float[sk]=v; clearPreset(); persist(); render(); }
+function setShort(sk,v){ state.short[sk]=v; clearPreset(); persist(); render(); }
+function setPattern(sk,v){
+  state.pattern[sk]=v;
+  /* 필터 패턴 ON 시 시그널 패턴(ta_p_*) 자동 해제 — 충돌 방지 */
+  if(v && state.signal[sk] && state.signal[sk].indexOf("ta_p_")===0) state.signal[sk]="";
+  clearPreset(); persist(); render();
+}
+function togglePatterns(){ state.showPatterns=!state.showPatterns; persist(); render(); }
+function applyPatternPreset(idx){
+  const p=PATTERNS[idx]; if(!p) return;
+  if(p.dir==='bear'){
+    if(!confirm("약세 패턴("+p.en+")입니다.\n매수전략과 방향 반대 — 그대로 적용할까요?")) return;
+  }
+  const sk=state.strat;
+  /* 1) 패턴 코드 설정 (base) */
+  state.pattern[sk] = PATTERN_PREFIX + p.key;
+  /* 시그널이 패턴이면 자동 해제 */
+  if(state.signal[sk] && state.signal[sk].indexOf("ta_p_")===0) state.signal[sk]="";
+  /* 2) combo 보조 필터 토글 — 현재 strat에 존재하는 코드만 ON */
+  const missing=[];
+  p.combo.forEach(c=>{
+    const f=state.filters[sk].find(x=>x.code===c);
+    if(f) f.on=true; else missing.push(c);
+  });
+  /* 3) 임계값(vol/cap/float/short)은 그대로 두기 */
+  /* 4) 출처 표시 */
+  state.preset = "__p_"+idx;
+  state.builtinSrc = p.src + (missing.length?" (현재 전략에 없는 보조: "+missing.join(", ")+")":"");
+  persist(); render();
+}
+function toggleCmp(){ state.showCmp=!state.showCmp; persist(); render(); }
+function toggleGuide(){ state.showGuide=!state.showGuide; persist(); render(); }
+function toggleCheck(i){
+  const idx=state.checks.indexOf(i);
+  if(idx>=0) state.checks.splice(idx,1); else state.checks.push(i);
+  persist(); render();
+}
+function openURL(u){ window.open(u,'_blank','noopener'); }
+function openGainers(sk){ openURL(buildURL(sk,{signal:'ta_topgainers'})); }
+function openTech(sk){ openURL(buildURL(sk,{view:'v=211'})); }
+
+/* ===== v13: 외부도구 연동 — TradingView(티커 동적) · Gemini Gem(고정) ===== */
+const TV_LAYOUT_URL = "https://kr.tradingview.com/chart/DZbBNbgX/?symbol=";
+const GEMINI_GEM_URL = "https://gemini.google.com/gem/7bf800f33bbc";
+const TV_LS_KEY = "finviz_tv_ticker_v1"; /* 기존 LS_KEY(finviz_screener_v5)와 분리 — 충돌 없음 */
+let tvTicker = sGet(TV_LS_KEY) || "";
+function setTvTicker(v){ tvTicker = v; } /* render 재호출 시에도 value 유지용 */
+function openTV(){
+  const t = String(tvTicker||"").toUpperCase().replace(/[^A-Z.\-]/g,""); /* 영문·점·하이픈만 (URL 인젝션 방지) */
+  if(!t){ alert("티커를 입력하세요 (예: TXN)"); return; }
+  tvTicker = t; sSet(TV_LS_KEY, t);
+  openURL(TV_LAYOUT_URL + encodeURIComponent(t));
+  render(); /* sanitize 결과를 입력창에 반영 */
+}
+function openGemini(){ openURL(GEMINI_GEM_URL); }
+function copyURL(){
+  const t=buildURL(state.strat);
+  const done=()=>{ const b=document.getElementById('copyBtn'); if(!b)return; b.textContent='복사됨 ✓'; b.classList.add('copied'); setTimeout(()=>{b.textContent='URL 복사'; b.classList.remove('copied');},2000); };
+  try{ navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done)); }
+  catch(e){ fallbackCopy(t,done); }
+}
+function fallbackCopy(t,cb){
+  try{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); cb(); }catch(e){}
+}
+/* 프리셋 (J) */
+function savePreset(sk){
+  const name=prompt("프리셋 이름:"); if(!name) return;
+  const fo={}; state.filters[sk].forEach(f=>{ fo[f.code]=f.on; });
+  state.presets[name]={filterOn:fo,signal:state.signal[sk],vol:state.vol[sk],cap:state.cap[sk],float:state.float[sk],short:state.short[sk],pattern:state.pattern[sk]};
+  state.preset=name; persist(); render();
+}
+function loadPreset(value){
+  if(!value) return;
+  let p=null, builtin=false;
+  if(value.indexOf("__b_")===0){ p=BUILTIN_PRESETS[+value.slice(4)]; builtin=true; }
+  else { p=state.presets[value]; }
+  if(!p) return;
+  const sk = builtin ? p.strat : state.strat;
+  if(builtin && STRATEGIES[sk]) state.strat=sk;
+  if(builtin){
+    state.filters[sk].forEach(f=>{ f.on = !!(p.filterOn && p.filterOn[f.code]); });
+  } else if(p.filterOn){
+    state.filters[sk].forEach(f=>{ if(typeof p.filterOn[f.code]==="boolean") f.on=p.filterOn[f.code]; });
+  }
+  if(typeof p.signal==="string") state.signal[sk]=p.signal;
+  if(typeof p.vol==="string") state.vol[sk]=p.vol;
+  if(typeof p.cap==="string") state.cap[sk]=p.cap;
+  if(typeof p.float==="string") state.float[sk]=p.float;
+  if(typeof p.short==="string") state.short[sk]=p.short;
+  if(typeof p.pattern==="string") state.pattern[sk]=p.pattern;
+  state.preset=value;
+  state.builtinSrc = builtin ? (p.src||"") : "";
+  persist(); render();
+}
+function delPresetPrompt(){
+  if(!state.preset || state.preset.indexOf("__b_")===0){ alert("삭제할 '내 프리셋'을 드롭다운에서 선택하세요 (빌트인 ★ 은 삭제 불가)."); return; }
+  delete state.presets[state.preset]; clearPreset(); persist(); render();
+}
+function resetStrat(sk){
+  state.filters[sk]=DEFAULTS.filters[sk].map(f=>({...f}));
+  state.signal[sk]=DEFAULTS.signal[sk];
+  state.vol[sk]=DEFAULTS.vol[sk];
+  state.cap[sk]=DEFAULTS.cap[sk];
+  state.float[sk]=DEFAULTS.float[sk];
+  state.short[sk]=DEFAULTS.short[sk];
+  state.pattern[sk]=DEFAULTS.pattern[sk];
+  clearPreset(); persist(); render();
+}
+function hex2rgba(hex,a){
+  const n=parseInt(hex.replace('#',''),16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+
+/* ===== ⚡ Quick Launch (v11) — state 미변경, Finviz URL만 도출/오픈 ===== */
+/* 하드코딩 없이 기존 DEFAULTS(초기 기본값 스냅샷)·BUILTIN_PRESETS에서 코드 도출 → drift/오타 0 */
+function quickURLFromStrat(sk){
+  if(!STRATEGIES[sk]||!DEFAULTS.filters[sk]) return "https://finviz.com/screener.ashx";
+  const codes=[];
+  DEFAULTS.filters[sk].forEach(f=>{ if(f.on) codes.push(f.code); });
+  if(DEFAULTS.vol[sk])     codes.push(DEFAULTS.vol[sk]);
+  if(DEFAULTS.cap[sk])     codes.push(DEFAULTS.cap[sk]);
+  if(DEFAULTS.float[sk])   codes.push(DEFAULTS.float[sk]);
+  if(DEFAULTS.short[sk])   codes.push(DEFAULTS.short[sk]);
+  if(DEFAULTS.pattern[sk]) codes.push(DEFAULTS.pattern[sk]);
+  let url=`https://finviz.com/screener.ashx?${STRATEGIES[sk].view}&f=${codes.join(",")}`;
+  if(DEFAULTS.signal[sk]) url+=`&s=${DEFAULTS.signal[sk]}`;
+  return url;
+}
+function quickURLFromBuiltin(i){
+  const p=BUILTIN_PRESETS[i]; if(!p) return "https://finviz.com/screener.ashx";
+  const sk=p.strat, codes=[];
+  if(p.filterOn) Object.keys(p.filterOn).forEach(c=>{ if(p.filterOn[c]) codes.push(c); });
+  if(p.vol)     codes.push(p.vol);
+  if(p.cap)     codes.push(p.cap);
+  if(p.float)   codes.push(p.float);
+  if(p.short)   codes.push(p.short);
+  if(p.pattern) codes.push(p.pattern);
+  const view=(STRATEGIES[sk]&&STRATEGIES[sk].view)||"v=211";
+  let url=`https://finviz.com/screener.ashx?${view}&f=${codes.join(",")}`;
+  if(p.signal) url+=`&s=${p.signal}`;
+  return url;
+}
+const QUICK_TARGETS = [
+  ()=>quickURLFromStrat("vcp"),     // 차트1 수렴돌파(ATPC)
+  ()=>quickURLFromStrat("surge"),   // 차트2 급등후보
+  ()=>quickURLFromBuiltin(0),       // 차트3 Minervini Stage2(leaders)
+];
+function quickPreview(i){ return QUICK_TARGETS[i]?QUICK_TARGETS[i]():""; }
+function quickOpen(i){ const u=quickPreview(i); if(u) openURL(u); }
+function initQuickLaunch(){
+  for(let i=0;i<QUICK_TARGETS.length;i++){
+    const el=document.getElementById("ql-url-"+i);
+    if(el) el.textContent = quickPreview(i).replace("https://finviz.com/","");
+  }
+}
+
+/* 🆕 IPO Date 신규상장 카드 (v12) — state 미변경, Finviz URL만 도출/오픈 */
+/* ⚠ ipodate_* 코드 미검증: Finviz에서 해당 옵션 1회 선택 후 주소창 f=ipodate_… 로 아래 값만 교정하면 됨 */
+const IPO_CODES = {
+  today:   "ipodate_today",     // ⚠미검증
+  week:    "ipodate_prevweek",  // ⚠미검증 (기본값)
+  month:   "ipodate_prevmonth", // ⚠미검증
+  quarter: "ipodate_prevquarter"// ⚠미검증
+};
+function ipoURL(){
+  const sel=document.getElementById("ql-ipo-period");
+  const key=(sel&&IPO_CODES[sel.value])?sel.value:"week";
+  return `https://finviz.com/screener.ashx?v=211&f=${IPO_CODES[key]}`;
+}
+function ipoOpen(){ openURL(ipoURL()); }
+function ipoPreview(){
+  const el=document.getElementById("ql-url-3");
+  if(el) el.textContent = ipoURL().replace("https://finviz.com/","");
+}
+
+render();
+initQuickLaunch();
+ipoPreview();
+</script>
+</body>
+</html>
